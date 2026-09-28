@@ -44,6 +44,19 @@ export const SEED_HOLES: DrillHole[] = [
       { id: 'sv-002-2', depth: 180, dip: 87.8, azimuth: 129.4 },
     ],
     remark: '已终孔并完成编录',
+    reviewStatus: 'submitted',
+    reviewer: '陈立',
+    reviewNote: '全孔 250m 编录、回次、岩芯箱均已完成，申请地质复核',
+    submittedAt: daysAgo(2),
+    reviewHistory: [
+      {
+        id: 'rev-seed-002-1',
+        action: 'submit',
+        operator: '陈立',
+        note: '全孔 250m 编录、回次、岩芯箱均已完成，申请地质复核',
+        actedAt: daysAgo(2),
+      },
+    ],
   },
   {
     id: 'hole-003',
@@ -77,6 +90,23 @@ export const SEED_HOLES: DrillHole[] = [
     rigNo: 'HGY-300',
     shift: '丙班',
     surveyData: [{ id: 'sv-004-1', depth: 90, dip: 89.4, azimuth: 120 }],
+    reviewStatus: 'draft',
+    reviewer: '赵晓峰',
+    reviewNote: '全孔 180m 编录完成，申请复核',
+    submittedAt: daysAgo(10),
+    returnReviewer: '李工',
+    returnReason: '90~120m 蚀变描述与岩芯照片不符，请补充硅化与矿化接触关系后重新送审',
+    returnedAt: daysAgo(8),
+    reviewHistory: [
+      { id: 'rev-seed-004-1', action: 'submit', operator: '赵晓峰', note: '全孔 180m 编录完成，申请复核', actedAt: daysAgo(10) },
+      {
+        id: 'rev-seed-004-2',
+        action: 'return',
+        operator: '李工',
+        reason: '90~120m 蚀变描述与岩芯照片不符，请补充硅化与矿化接触关系后重新送审',
+        actedAt: daysAgo(8),
+      },
+    ],
   },
   {
     id: 'hole-005',

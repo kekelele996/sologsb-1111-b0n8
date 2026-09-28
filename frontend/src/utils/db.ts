@@ -8,7 +8,7 @@ import type { LithoLog } from '../types/litho-log';
 export const DB_NAME = 'gbdrillcore-db';
 
 /** 当前 schema 版本，与 db.version(n) 对应 */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 class DrillCoreDB extends Dexie {
   holes!: Table<DrillHole, string>;
@@ -49,6 +49,16 @@ class DrillCoreDB extends Dexie {
             }
           });
       });
+
+    // v3：钻孔台帐增加复核状态索引（送审冻结）。
+    // 冻结信息（送审人/说明/退回历史）直接挂在 holes 行上，随导出备份一并保存；旧数据缺省即未送审，无需回填。
+    this.version(3).stores({
+      holes: 'id, holeNo, rigNo, shift, startDate, reviewStatus',
+      runs: 'id, runNo, holeId, fromDepth, toDepth, shift',
+      boxes: 'id, boxNo, holeId, shelfPos, boxedAt',
+      lithos: 'id, holeId, fromDepth, toDepth, [holeId+fromDepth], lithology',
+      meta: 'key',
+    });
   }
 }
 

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Alert, Button, Card, Col, Progress, Row, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Progress, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { LockOutlined } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import { Link } from 'react-router-dom';
 import StatBadge from '../components/common/StatBadge';
@@ -11,6 +12,7 @@ import { useRunStore, anomalyList } from '../stores/runStore';
 import { RIG_NOS, SHIFTS, type HoleProgress } from '../types/drill-hole';
 import type { RunAnomaly } from '../types/drill-run';
 import { isAnomaly } from '../utils/recovery';
+import { isHoleFrozen } from '../utils/review';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -53,15 +55,25 @@ export default function HoleBoard() {
     },
     {
       title: '状态',
-      width: 150,
-      render: (_, row) =>
-        row.needSupplement ? (
-          <Tag color="red">未达设计 · 待补勘</Tag>
-        ) : row.finished ? (
-          <Tag color="green">已终孔</Tag>
-        ) : (
-          <Tag color="blue">在钻</Tag>
-        ),
+      width: 180,
+      render: (_, row) => (
+        <Space size={4} direction="vertical">
+          {row.needSupplement ? (
+            <Tag color="red">未达设计 · 待补勘</Tag>
+          ) : row.finished ? (
+            <Tag color="green">已终孔</Tag>
+          ) : (
+            <Tag color="blue">在钻</Tag>
+          )}
+          {isHoleFrozen(row.hole) ? (
+            <Tooltip title={`送审人：${row.hole.reviewer || '-'}${row.hole.reviewNote ? `；说明：${row.hole.reviewNote}` : ''}`}>
+              <Tag icon={<LockOutlined />} color="gold" style={{ marginInlineEnd: 0 }}>
+                复核冻结中
+              </Tag>
+            </Tooltip>
+          ) : null}
+        </Space>
+      ),
     },
     {
       title: '操作',
@@ -158,7 +170,7 @@ export default function HoleBoard() {
               columns={progressColumns}
               dataSource={progress}
               pagination={{ pageSize: 6, hideOnSinglePage: true }}
-              scroll={{ x: 980 }}
+              scroll={{ x: 1020 }}
             />
           </Card>
         </Col>

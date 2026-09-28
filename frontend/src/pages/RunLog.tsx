@@ -1,17 +1,20 @@
 import { useMemo, useState } from 'react';
-import { Alert, App as AntApp, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Typography } from 'antd';
+import { Alert, App as AntApp, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tooltip, Typography } from 'antd';
+import { LockOutlined } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import StatBadge from '../components/common/StatBadge';
 import RecoveryBadge from '../components/common/RecoveryBadge';
 import DepthRangeInput from '../components/common/DepthRangeInput';
 import EmptyPanel from '../components/common/EmptyPanel';
+import FrozenBanner from '../components/common/FrozenBanner';
 import { useDepthCalc } from '../hooks/useDepthCalc';
 import { useHoleStore } from '../stores/holeStore';
 import { useRunStore } from '../stores/runStore';
 import { SHIFTS } from '../types/drill-hole';
 import type { DrillRun, RunShift } from '../types/drill-run';
 import { footageOf, recoveryOf, validateRange } from '../utils/recovery';
+import { FROZEN_TIP, isHoleFrozen } from '../utils/review';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -49,10 +52,16 @@ export default function RunLog() {
 
   const holeOptions = holes.map((hole) => ({ label: `${hole.holeNo} · ${hole.rigNo}`, value: hole.id }));
   const activeHoleId = currentHoleId || holes[0]?.id || '';
+  const activeHole = holes.find((h) => h.id === activeHoleId);
+  const frozen = isHoleFrozen(activeHole);
   const summary = useMemo(() => summarize(activeHoleId), [summarize, activeHoleId]);
   const tableRuns = useMemo(() => [...summary.runs].sort((a, b) => b.fromDepth - a.fromDepth), [summary.runs]);
 
   const openCreate = () => {
+    if (frozen) {
+      message.warning(FROZEN_TIP);
+      return;
+    }
     setEditing(null);
     form.resetFields();
     const hole = holes.find((h) => h.id === activeHoleId);
@@ -76,6 +85,10 @@ export default function RunLog() {
   };
 
   const openEdit = (record: DrillRun) => {
+    if (frozen) {
+      message.warning(FROZEN_TIP);
+      return;
+    }
     setEditing(record);
     setRange({ from: record.fromDepth, to: record.toDepth });
     setLiveCore(record.coreLength);
@@ -115,12 +128,17 @@ export default function RunLog() {
     };
     const footage = footageOf(payload.fromDepth, payload.toDepth);
     const recovery = recoveryOf(payload.coreLength, footage);
-    if (editing) {
-      await updateRun(editing.id, payload);
-      message.success(`已更新回次 ${payload.runNo}，进尺 ${footage}m，采取率 ${recovery}%`);
-    } else {
-      await addRun(payload);
-      message.success(`已录入回次 ${payload.runNo}，进尺 ${footage}m，采取率 ${recovery}%`);
+    try {
+      if (editing) {
+        await updateRun(editing.id, payload);
+        message.success(`已更新回次 ${payload.runNo}，进尺 ${footage}m，采取率 ${recovery}%`);
+      } else {
+        await addRun(payload);
+        message.success(`已录入回次 ${payload.runNo}，进尺 ${footage}m，采取率 ${recovery}%`);
+      }
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
     }
     setOpen(false);
   };
@@ -142,14 +160,44 @@ export default function RunLog() {
       fixed: 'right',
       render: (_, record) => (
         <Space size={2}>
-          <Button size="small" type="link" onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm title={`确认删除回次 ${record.runNo}？`} onConfirm={() => removeRun(record.id).then(() => message.success('已删除'))}>
-            <Button size="small" type="link" danger>
-              删除
+          {frozen ? (
+            <Tooltip title={FROZEN_TIP}>
+              <span>
+                <Button size="small" type="link" disabled icon={<LockOutlined />}>
+                  编辑
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button size="small" type="link" onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
+          )}
+          {frozen ? (
+            <Tooltip title={FROZEN_TIP}>
+              <span>
+                <Button size="small" type="link" danger disabled>
+                  删除
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Popconfirm
+              title={`确认删除回次 ${record.runNo}？`}
+              onConfirm={async () => {
+                try {
+                  await removeRun(record.id);
+                  message.success('已删除');
+                } catch (error) {
+                  message.error((error as Error).message);
+                }
+              }}
+            >
+              <Button size="small" type="link" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -165,12 +213,16 @@ export default function RunLog() {
       </Title>
       <Paragraph type="secondary">录入起止深度与岩芯长度，系统自动计算进尺与采取率；采取率低于 75% 立即标红并进入异常清单。</Paragraph>
 
+      <FrozenBanner hole={activeHole} />
+
       <Space style={{ marginBottom: 12 }} wrap>
         <span style={{ color: '#6b7a86' }}>当前钻孔</span>
         <Select style={{ width: 200 }} value={activeHoleId} onChange={setCurrentHole} options={holeOptions} placeholder="选择钻孔" />
-        <Button type="primary" onClick={openCreate} disabled={!activeHoleId}>
-          录入回次
-        </Button>
+        <Tooltip title={frozen ? FROZEN_TIP : undefined}>
+          <Button type="primary" onClick={openCreate} disabled={!activeHoleId || frozen} icon={frozen ? <LockOutlined /> : undefined}>
+            录入回次
+          </Button>
+        </Tooltip>
         <Text type="secondary">
           深度覆盖：{summary.coverage.length ? summary.coverage.map((r) => `${r.from}~${r.to}m`).join('、') : '尚无回次'}
         </Text>
@@ -197,7 +249,11 @@ export default function RunLog() {
       </Row>
 
       {tableRuns.length === 0 ? (
-        <EmptyPanel description="该孔暂无回次记录" actionText="录入回次" onAction={openCreate} />
+        <EmptyPanel
+          description={frozen ? '该孔已送审冻结，回次记录不可新增' : '该孔暂无回次记录'}
+          actionText={frozen ? undefined : '录入回次'}
+          onAction={frozen ? undefined : openCreate}
+        />
       ) : (
         <Card size="small">
           <Table rowKey="id" size="small" columns={columns} dataSource={tableRuns} pagination={{ pageSize: 10 }} scroll={{ x: 1300 }} />
