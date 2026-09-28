@@ -44,6 +44,13 @@ export const SEED_HOLES: DrillHole[] = [
       { id: 'sv-002-2', depth: 180, dip: 87.8, azimuth: 129.4 },
     ],
     remark: '已终孔并完成编录',
+    review: {
+      status: 'submitted',
+      submittedBy: '陈立',
+      submittedAt: daysAgo(10),
+      submitNote: 'ZK-2402 全孔 250m 回次、岩芯箱与岩性编录已完成，请复核',
+      history: [{ id: 'rvw-seed-2402-1', action: 'submit', operator: '陈立', note: 'ZK-2402 全孔 250m 回次、岩芯箱与岩性编录已完成，请复核', at: daysAgo(10) }],
+    },
   },
   {
     id: 'hole-003',
@@ -63,6 +70,19 @@ export const SEED_HOLES: DrillHole[] = [
       { id: 'sv-003-3', depth: 300, dip: 83.4, azimuth: 143.8 },
     ],
     remark: '孔内坍塌提前终孔，未达设计孔深',
+    review: {
+      status: 'returned',
+      submittedBy: '吴倩',
+      submittedAt: daysAgo(8),
+      submitNote: 'ZK-2403 已终孔 320m，台账与编录资料送审',
+      returnedBy: '高工',
+      returnedAt: daysAgo(6),
+      returnReason: '74~118m 断层角砾岩段岩芯采取率偏低，需补充破碎带说明后重新送审',
+      history: [
+        { id: 'rvw-seed-2403-1', action: 'submit', operator: '吴倩', note: 'ZK-2403 已终孔 320m，台账与编录资料送审', at: daysAgo(8) },
+        { id: 'rvw-seed-2403-2', action: 'return', operator: '高工', note: '74~118m 断层角砾岩段岩芯采取率偏低，需补充破碎带说明后重新送审', at: daysAgo(6) },
+      ],
+    },
   },
   {
     id: 'hole-004',

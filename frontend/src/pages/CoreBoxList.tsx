@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
-import { Alert, App as AntApp, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Col, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App as AntApp, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Col, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { LockOutlined } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import BoxGrid from '../components/common/BoxGrid';
 import DepthRangeInput from '../components/common/DepthRangeInput';
 import EmptyPanel from '../components/common/EmptyPanel';
+import ReviewStatusTag from '../components/common/ReviewStatusTag';
 import { useHoleStore } from '../stores/holeStore';
 import { useRunStore } from '../stores/runStore';
 import { useBoxStore } from '../stores/boxStore';
 import { SHELF_POSITIONS, type CoreBox, type BoxContinuity } from '../types/core-box';
 import { boxCapacityOk, checkBoxContinuity, validateRange } from '../utils/recovery';
+import { isHoleFrozen } from '../utils/review';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -61,6 +64,8 @@ export default function CoreBoxList() {
 
   const holeOptions = holes.map((hole) => ({ label: `${hole.holeNo} · ${hole.rigNo}`, value: hole.id }));
   const activeHoleId = currentHoleId || holes[0]?.id || '';
+  const activeHole = holes.find((h) => h.id === activeHoleId);
+  const frozen = isHoleFrozen(activeHole);
   const holeBoxes = useMemo(() => boxes.filter((b) => b.holeId === activeHoleId), [boxes, activeHoleId]);
   const selectedBox = useMemo(
     () => holeBoxes.find((b) => b.id === selectedBoxId) ?? holeBoxes[0],
@@ -70,6 +75,10 @@ export default function CoreBoxList() {
   const continuityOf = (box: CoreBox): BoxContinuity => checkBoxContinuity(box, runs);
 
   const openCreate = () => {
+    if (frozen) {
+      message.warning('该钻孔已送审冻结，岩芯箱不可新增，请先由复核人退回');
+      return;
+    }
     setEditing(null);
     form.resetFields();
     const lastBox = holeBoxes.reduce<CoreBox | undefined>((acc, box) => (!acc || box.toDepth > acc.toDepth ? box : acc), undefined);
@@ -92,6 +101,10 @@ export default function CoreBoxList() {
   };
 
   const openEdit = (record: CoreBox) => {
+    if (frozen) {
+      message.warning('该钻孔已送审冻结，岩芯箱不可编辑，请先由复核人退回');
+      return;
+    }
     setEditing(record);
     setRange({ from: record.fromDepth, to: record.toDepth });
     form.setFieldsValue({
@@ -136,13 +149,18 @@ export default function CoreBoxList() {
       return;
     }
     const continuity = checkBoxContinuity(draft, runs);
-    if (editing) {
-      await updateBox(editing.id, payload);
-      message.success(`已更新箱 ${payload.boxNo}`);
-    } else {
-      const created = await addBox(payload);
-      setSelectedBoxId(created.id);
-      message.success(`已装箱 ${payload.boxNo}`);
+    try {
+      if (editing) {
+        await updateBox(editing.id, payload);
+        message.success(`已更新箱 ${payload.boxNo}`);
+      } else {
+        const created = await addBox(payload);
+        setSelectedBoxId(created.id);
+        message.success(`已装箱 ${payload.boxNo}`);
+      }
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
     }
     if (!continuity.covered) {
       message.warning(continuity.message);
@@ -180,18 +198,48 @@ export default function CoreBoxList() {
       width: 200,
       fixed: 'right',
       render: (_, record) => (
-        <Space size={2}>
+        <Space size={2} wrap>
           <Button size="small" type="link" onClick={() => setSelectedBoxId(record.id)}>
             查看格位
           </Button>
-          <Button size="small" type="link" onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm title={`确认删除岩芯箱 ${record.boxNo}？`} onConfirm={() => removeBox(record.id).then(() => message.success('已删除'))}>
-            <Button size="small" type="link" danger>
-              删除
+          {frozen ? (
+            <Tooltip title="资料已送审冻结，退回后可编辑">
+              <span>
+                <Button size="small" type="link" disabled icon={<LockOutlined />}>
+                  编辑
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button size="small" type="link" onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
+          )}
+          {frozen ? (
+            <Tooltip title="资料已送审冻结，不可删除">
+              <span>
+                <Button size="small" type="link" danger disabled icon={<LockOutlined />}>
+                  删除
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Popconfirm
+              title={`确认删除岩芯箱 ${record.boxNo}？`}
+              onConfirm={async () => {
+                try {
+                  await removeBox(record.id);
+                  message.success('已删除');
+                } catch (error) {
+                  message.error((error as Error).message);
+                }
+              }}
+            >
+              <Button size="small" type="link" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -209,13 +257,35 @@ export default function CoreBoxList() {
       <Space style={{ marginBottom: 12 }} wrap>
         <span style={{ color: '#6b7a86' }}>当前钻孔</span>
         <Select style={{ width: 200 }} value={activeHoleId} onChange={setCurrentHole} options={holeOptions} placeholder="选择钻孔" />
-        <Button type="primary" onClick={openCreate} disabled={!activeHoleId}>
-          新建岩芯箱
-        </Button>
+        {activeHole ? <ReviewStatusTag hole={activeHole} showDetail={false} /> : null}
+        <Tooltip title={frozen ? '该钻孔已送审冻结，需复核人退回后才能新建岩芯箱' : undefined}>
+          <span>
+            <Button type="primary" onClick={openCreate} disabled={!activeHoleId || frozen} icon={frozen ? <LockOutlined /> : undefined}>
+              新建岩芯箱
+            </Button>
+          </span>
+        </Tooltip>
       </Space>
 
+      {frozen ? (
+        <Alert
+          style={{ marginBottom: 12 }}
+          type="warning"
+          showIcon
+          icon={<LockOutlined />}
+          message={`钻孔 ${activeHole?.holeNo ?? ''} 已送审，岩芯箱资料冻结中`}
+          description={`送审人：${activeHole?.review?.submittedBy ?? '-'}（${
+            activeHole?.review?.submittedAt ? dayjs(activeHole.review.submittedAt).format('YYYY-MM-DD HH:mm') : '-'
+          }）。岩芯箱不可新建、编辑、删除，格位网格仅供查看，破损格不可切换。`}
+        />
+      ) : null}
+
       {holeBoxes.length === 0 ? (
-        <EmptyPanel description="该孔暂无岩芯箱记录" actionText="新建岩芯箱" onAction={openCreate} />
+        <EmptyPanel
+          description={frozen ? '该钻孔已送审冻结，暂无岩芯箱记录且不可新增' : '该孔暂无岩芯箱记录'}
+          actionText={frozen ? undefined : '新建岩芯箱'}
+          onAction={frozen ? undefined : openCreate}
+        />
       ) : (
         <Row gutter={[16, 16]}>
           <Col xs={24}>
@@ -233,13 +303,27 @@ export default function CoreBoxList() {
             >
               {selectedBox ? (
                 <>
-                  <BoxGrid box={selectedBox} runs={runs} onToggleDamaged={(slot) => toggleDamagedSlot(selectedBox.id, slot)} />
-                  <Alert
-                    style={{ marginTop: 10 }}
-                    type={continuityOf(selectedBox).covered ? 'success' : 'warning'}
-                    showIcon
-                    message={continuityOf(selectedBox).message}
+                  <BoxGrid
+                    box={selectedBox}
+                    runs={runs}
+                    onToggleDamaged={
+                      frozen
+                        ? undefined
+                        : (slot) => {
+                            toggleDamagedSlot(selectedBox.id, slot).catch((error: Error) => message.error(error.message));
+                          }
+                    }
                   />
+                  {frozen ? (
+                    <Alert style={{ marginTop: 10 }} type="warning" showIcon icon={<LockOutlined />} message="冻结中：格位仅供查看，破损格不可切换标记" />
+                  ) : (
+                    <Alert
+                      style={{ marginTop: 10 }}
+                      type={continuityOf(selectedBox).covered ? 'success' : 'warning'}
+                      showIcon
+                      message={continuityOf(selectedBox).message}
+                    />
+                  )}
                 </>
               ) : null}
             </Card>
@@ -252,7 +336,19 @@ export default function CoreBoxList() {
         </Row>
       )}
 
-      <Modal open={open} title={editing ? `编辑岩芯箱 · ${editing.boxNo}` : '新建岩芯箱'} onCancel={() => setOpen(false)} onOk={submit} okText="保存" cancelText="取消" width={720}>
+      <Modal
+        open={open}
+        title={editing ? `编辑岩芯箱 · ${editing.boxNo}` : '新建岩芯箱'}
+        onCancel={() => setOpen(false)}
+        onOk={submit}
+        okText="保存"
+        cancelText="取消"
+        okButtonProps={{ disabled: frozen }}
+        cancelButtonProps={{ disabled: frozen }}
+        closable={!frozen}
+        maskClosable={!frozen}
+        width={720}
+      >
         <Form form={form} layout="vertical">
           <Space size={12} style={{ display: 'flex' }} align="start">
             <Form.Item name="boxNo" label="箱号" rules={[{ required: true, message: '请输入箱号' }]}>

@@ -3,6 +3,8 @@ import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import type { DrillRun, RunAnomaly, RunShift } from '../types/drill-run';
 import { footageOf, gradeOf, isAnomaly, recoveryOf, RECOVERY_GRADE_TEXT } from '../utils/recovery';
+import { assertHoleWritable } from '../utils/review';
+import { useHoleStore } from './holeStore';
 
 export interface RunInput {
   runNo: string;
@@ -38,6 +40,7 @@ export const useRunStore = create<RunState>()((set, get) => ({
   },
 
   addRun: async (input) => {
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === input.holeId));
     const footage = footageOf(input.fromDepth, input.toDepth);
     const run: DrillRun = {
       id: uid('run'),
@@ -62,6 +65,7 @@ export const useRunStore = create<RunState>()((set, get) => ({
   updateRun: async (id, patch) => {
     const current = get().runs.find((r) => r.id === id);
     if (!current) return;
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === (patch.holeId ?? current.holeId)));
     const merged = { ...current, ...patch };
     const footage = footageOf(merged.fromDepth, merged.toDepth);
     const next: DrillRun = {
@@ -74,11 +78,15 @@ export const useRunStore = create<RunState>()((set, get) => ({
   },
 
   removeRun: async (id) => {
+    const current = get().runs.find((r) => r.id === id);
+    if (!current) return;
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === current.holeId));
     await db.runs.delete(id);
     set({ runs: get().runs.filter((r) => r.id !== id) });
   },
 
   removeByHole: async (holeId) => {
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === holeId));
     const ids = get().runs.filter((r) => r.holeId === holeId).map((r) => r.id);
     await db.runs.bulkDelete(ids);
     set({ runs: get().runs.filter((r) => r.holeId !== holeId) });

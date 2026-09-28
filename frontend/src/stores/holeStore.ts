@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { db } from '../utils/db';
 import { uid } from '../utils/id';
-import type { DrillHole, HoleProgress, SurveyPoint } from '../types/drill-hole';
+import { assertHoleWritable, nextReturnReview, nextSubmitReview } from '../utils/review';
+import type { DrillHole, HoleProgress, ReviewState, SurveyPoint } from '../types/drill-hole';
 import type { DrillRun } from '../types/drill-run';
 import { buildHoleProgress } from '../utils/recovery';
 
@@ -29,6 +30,10 @@ interface HoleState {
   addHole: (input: HoleInput) => Promise<DrillHole>;
   updateHole: (id: string, patch: Partial<HoleInput>) => Promise<void>;
   removeHole: (id: string) => Promise<void>;
+  /** 编录员送审：冻结该孔台帐与全部下属资料 */
+  submitReview: (id: string, submittedBy: string, note: string) => Promise<void>;
+  /** 复核人退回：填写退回原因并解除冻结，历史保留 */
+  returnReview: (id: string, returnedBy: string, reason: string) => Promise<void>;
   /** 当前钻孔 */
   currentHole: () => DrillHole | undefined;
 }
@@ -41,7 +46,12 @@ export const useHoleStore = create<HoleState>()((set, get) => ({
 
   hydrate: async () => {
     const holes = await db.holes.orderBy('holeNo').toArray();
-    set({ holes, currentHoleId: get().currentHoleId || holes[0]?.id || '', hydrated: true });
+    const currentId = get().currentHoleId;
+    set({
+      holes,
+      currentHoleId: currentId && holes.some((h) => h.id === currentId) ? currentId : holes[0]?.id || '',
+      hydrated: true,
+    });
   },
 
   setCurrentHole: (id) => set({ currentHoleId: id }),
@@ -70,14 +80,37 @@ export const useHoleStore = create<HoleState>()((set, get) => ({
   updateHole: async (id, patch) => {
     const current = get().holes.find((h) => h.id === id);
     if (!current) return;
+    assertHoleWritable(current);
     const next: DrillHole = { ...current, ...patch };
     await db.holes.put(next);
     set({ holes: get().holes.map((h) => (h.id === id ? next : h)) });
   },
 
   removeHole: async (id) => {
+    const current = get().holes.find((h) => h.id === id);
+    if (!current) return;
+    assertHoleWritable(current);
     await db.holes.delete(id);
     set({ holes: get().holes.filter((h) => h.id !== id) });
+  },
+
+  submitReview: async (id, submittedBy, note) => {
+    const current = get().holes.find((h) => h.id === id);
+    if (!current) return;
+    assertHoleWritable(current);
+    const review: ReviewState = nextSubmitReview(current.review, submittedBy.trim(), note.trim());
+    const next: DrillHole = { ...current, review };
+    await db.holes.put(next);
+    set({ holes: get().holes.map((h) => (h.id === id ? next : h)) });
+  },
+
+  returnReview: async (id, returnedBy, reason) => {
+    const current = get().holes.find((h) => h.id === id);
+    if (!current || current.review?.status !== 'submitted') return;
+    const review: ReviewState = nextReturnReview(current.review, returnedBy.trim(), reason.trim());
+    const next: DrillHole = { ...current, review };
+    await db.holes.put(next);
+    set({ holes: get().holes.map((h) => (h.id === id ? next : h)) });
   },
 
   currentHole: () => get().holes.find((h) => h.id === get().currentHoleId),

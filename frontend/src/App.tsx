@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Layout, Menu, Spin, Typography, App as AntApp, Button, Space } from 'antd';
+import { Layout, Menu, Spin, Typography, App as AntApp, Button, Modal, Space, Upload } from 'antd';
+import type { UploadProps } from 'antd';
 import {
   CompassOutlined,
   DatabaseOutlined,
@@ -7,10 +8,11 @@ import {
   ExperimentOutlined,
   ProfileOutlined,
   BarsOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { seedIfEmpty } from './utils/seed';
-import { downloadText, exportBackupJson } from './utils/export';
+import { downloadText, exportBackupJson, importBackup } from './utils/export';
 import { useHoleStore } from './stores/holeStore';
 import { useRunStore } from './stores/runStore';
 import { useBoxStore } from './stores/boxStore';
@@ -62,7 +64,30 @@ export default function App() {
   const handleExport = async () => {
     const json = await exportBackupJson();
     downloadText(`gbdrillcore-backup-${new Date().toISOString().slice(0, 10)}.json`, json);
-    message.success('已导出 IndexedDB 全量 JSON 备份');
+    message.success('已导出 IndexedDB 全量 JSON 备份（含送审 / 退回复核状态与历史）');
+  };
+
+  const handleImportFile: UploadProps['beforeUpload'] = (file) => {
+    Modal.confirm({
+      title: '导入备份将覆盖当前全部数据',
+      content: `确认导入 ${file.name}？现有钻孔、回次、岩芯箱、岩性及复核状态会被备份内容替换。`,
+      okText: '覆盖导入',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const text = await file.text();
+          const counts = await importBackup(text);
+          await Promise.all([hydrateHoles(), hydrateRuns(), hydrateBoxes(), hydrateLithos()]);
+          message.success(
+            `已恢复备份：${counts.holes} 个钻孔、${counts.runs} 条回次、${counts.boxes} 个岩芯箱、${counts.lithos} 段岩性，复核冻结状态与历史一并恢复`,
+          );
+        } catch (error) {
+          message.error(`备份恢复失败：${(error as Error).message}`);
+        }
+      },
+    });
+    return false;
   };
 
   return (
@@ -80,6 +105,9 @@ export default function App() {
         <Header style={{ background: '#fff', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text strong>矿区钻孔岩芯编目台</Text>
           <Space>
+            <Upload accept="application/json,.json" showUploadList={false} beforeUpload={handleImportFile}>
+              <Button icon={<UploadOutlined />}>导入备份</Button>
+            </Upload>
             <Button icon={<DownloadOutlined />} onClick={handleExport}>
               导出备份
             </Button>

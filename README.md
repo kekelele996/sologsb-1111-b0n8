@@ -51,11 +51,11 @@ npm run build    # 类型检查 + 生产构建
 │   └── src/
 │       ├── types/             # drill-hole / drill-run / core-box / litho-log
 │       ├── stores/            # holeStore / runStore / boxStore / lithoStore
-│       ├── components/common/ # DepthRangeInput / RecoveryBadge / BoxGrid / LithoColumn / StatBadge / FilterBar / EmptyPanel
+│       ├── components/common/ # DepthRangeInput / RecoveryBadge / BoxGrid / LithoColumn / StatBadge / FilterBar / EmptyPanel / ReviewStatusTag
 │       ├── hooks/             # useHoleFilter / useDepthCalc
 │       ├── pages/             # HoleBoard / HoleList / RunLog / CoreBoxList / LithoEditor
 │       ├── router/index.tsx   # 路由表
-│       └── utils/             # recovery.ts / db.ts / export.ts（+ seed.ts / id.ts）
+│       └── utils/             # recovery.ts / review.ts / db.ts / export.ts（+ seed.ts / id.ts）
 ```
 
 ## 功能与路由
@@ -63,14 +63,20 @@ npm run build    # 类型检查 + 生产构建
 | 路由 | 页面 | 说明 |
 | --- | --- | --- |
 | `/` | 工作台 | 钻孔进度、设计达成率、未达设计待补勘清单、采取率异常清单（<75% 标红） |
-| `/holes` | 钻孔台帐 | 建孔、坐标与孔口标高、设计/终孔深度、测斜数据、回次深度覆盖与岩芯箱数回显 |
-| `/runs` | 回次记录 | 起止深度自动算进尺与采取率，低于 75% 立即标红并入异常清单 |
-| `/boxes` | 岩芯箱编目 | 格位网格按深度填充、破损格标记、装箱深度连续性与格位容量校验 |
-| `/lithology` | 岩性编录 | 按深度区间编录岩性/蚀变/矿化/RQD/样品，区间重叠报冲突并高亮，SVG 岩性柱状图 |
+| `/holes` | 钻孔台帐 | 建孔、坐标与孔口标高、设计/终孔深度、测斜数据、回次深度覆盖与岩芯箱数回显；地质复核送审 / 退回与历史 |
+| `/runs` | 回次记录 | 起止深度自动算进尺与采取率，低于 75% 立即标红并入异常清单；送审冻结期间只读 |
+| `/boxes` | 岩芯箱编目 | 格位网格按深度填充、破损格标记、装箱深度连续性与格位容量校验；送审冻结期间只读 |
+| `/lithology` | 岩性编录 | 按深度区间编录岩性/蚀变/矿化/RQD/样品，区间重叠报冲突并高亮，SVG 岩性柱状图；送审冻结期间只读 |
+
+## 地质复核与冻结
+
+- 编录员在钻孔台帐填写**送审人 + 送审说明**后，该孔进入「待复核 · 冻结」：台帐、回次、岩芯箱、岩性记录的新增 / 编辑 / 移除入口全部禁用（store 层另有写保护兜底，防止绕过界面改数），其他未送审钻孔不受影响。
+- 复核人在台帐点「复核退回」，填写**复核人 + 退回原因**后立即解除冻结；每次送审与退回都追加到该孔复核历史，「复核记录」弹窗可随时查看，退回不会清除历史。
+- 复核状态内嵌在钻孔记录中，刷新页面后从 IndexedDB 还原；顶栏「导出备份 / 导入备份」的全量 JSON 同样包含复核状态与历史，恢复后冻结状态一致。
 
 ## 数据存储说明
 
 - 全部数据存于浏览器 IndexedDB（Dexie，库名 `gbdrillcore-db`），表：`holes`、`runs`、`boxes`、`lithos`、`meta`。
-- `db.version(1)` 建表声明索引；`db.version(2).upgrade(...)` 为岩性表增加 `[holeId+fromDepth]` 复合索引并回填历史 RQD。升级前可用顶栏「导出备份」导出全量 JSON。
+- `db.version(1)` 建表声明索引；`db.version(2).upgrade(...)` 为岩性表增加 `[holeId+fromDepth]` 复合索引并回填历史 RQD；`db.version(3)` 增加钻孔地质复核状态（内嵌于 holes 行，无需回填，旧数据缺省视为未送审）。升级前可用顶栏「导出备份」导出全量 JSON。
 - 首次打开且表为空时写入一批示例编目数据（`src/utils/seed.ts`，5 个钻孔 + 回次 + 岩芯箱 + 岩性区间）。
 - 容器无状态：不使用数据库服务、不挂载命名卷，`docker compose down` 后数据仍留在浏览器中。

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import StatBadge from '../components/common/StatBadge';
 import RecoveryBadge from '../components/common/RecoveryBadge';
 import FilterBar from '../components/common/FilterBar';
+import ReviewStatusTag from '../components/common/ReviewStatusTag';
 import { useHoleFilter } from '../hooks/useHoleFilter';
 import { useHoleStore, holeProgressList } from '../stores/holeStore';
 import { useRunStore, anomalyList } from '../stores/runStore';
@@ -52,7 +53,7 @@ export default function HoleBoard() {
       ),
     },
     {
-      title: '状态',
+      title: '施工状态',
       width: 150,
       render: (_, row) =>
         row.needSupplement ? (
@@ -64,11 +65,16 @@ export default function HoleBoard() {
         ),
     },
     {
+      title: '复核状态',
+      width: 130,
+      render: (_, row) => <ReviewStatusTag hole={row.hole} />,
+    },
+    {
       title: '操作',
       width: 110,
       render: (_, row) => (
         <Link to="/runs">
-          <Button size="small" type="link">
+          <Button size="small" type="link" disabled={row.hole.review?.status === 'submitted'}>
             录回次
           </Button>
         </Link>
@@ -158,7 +164,7 @@ export default function HoleBoard() {
               columns={progressColumns}
               dataSource={progress}
               pagination={{ pageSize: 6, hideOnSinglePage: true }}
-              scroll={{ x: 980 }}
+              scroll={{ x: 1100 }}
             />
           </Card>
         </Col>

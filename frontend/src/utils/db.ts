@@ -8,7 +8,7 @@ import type { LithoLog } from '../types/litho-log';
 export const DB_NAME = 'gbdrillcore-db';
 
 /** 当前 schema 版本，与 db.version(n) 对应 */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 class DrillCoreDB extends Dexie {
   holes!: Table<DrillHole, string>;
@@ -49,6 +49,16 @@ class DrillCoreDB extends Dexie {
             }
           });
       });
+
+    // v3：钻孔地质复核流程。复核状态（送审/退回/历史）内嵌在 holes 行的 review 字段，
+    // 随记录持久化与备份，无需数据回填；旧钻孔缺省视为未送审，不新增索引。
+    this.version(3).stores({
+      holes: 'id, holeNo, rigNo, shift, startDate',
+      runs: 'id, runNo, holeId, fromDepth, toDepth, shift',
+      boxes: 'id, boxNo, holeId, shelfPos, boxedAt',
+      lithos: 'id, holeId, fromDepth, toDepth, [holeId+fromDepth], lithology',
+      meta: 'key',
+    });
   }
 }
 

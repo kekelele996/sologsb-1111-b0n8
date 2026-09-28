@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import type { CoreBox } from '../types/core-box';
+import { assertHoleWritable } from '../utils/review';
+import { useHoleStore } from './holeStore';
 
 export interface BoxInput {
   boxNo: string;
@@ -39,6 +41,7 @@ export const useBoxStore = create<BoxState>()((set, get) => ({
   },
 
   addBox: async (input) => {
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === input.holeId));
     const box: CoreBox = {
       id: uid('box'),
       boxNo: input.boxNo.trim(),
@@ -61,12 +64,16 @@ export const useBoxStore = create<BoxState>()((set, get) => ({
   updateBox: async (id, patch) => {
     const current = get().boxes.find((b) => b.id === id);
     if (!current) return;
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === (patch.holeId ?? current.holeId)));
     const next: CoreBox = { ...current, ...patch };
     await db.boxes.put(next);
     set({ boxes: get().boxes.map((b) => (b.id === id ? next : b)) });
   },
 
   removeBox: async (id) => {
+    const current = get().boxes.find((b) => b.id === id);
+    if (!current) return;
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === current.holeId));
     await db.boxes.delete(id);
     set({ boxes: get().boxes.filter((b) => b.id !== id) });
   },
@@ -74,6 +81,7 @@ export const useBoxStore = create<BoxState>()((set, get) => ({
   toggleDamagedSlot: async (id, slot) => {
     const current = get().boxes.find((b) => b.id === id);
     if (!current) return;
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === current.holeId));
     const damagedSlots = current.damagedSlots.includes(slot)
       ? current.damagedSlots.filter((s) => s !== slot)
       : [...current.damagedSlots, slot].sort((a, b) => a - b);

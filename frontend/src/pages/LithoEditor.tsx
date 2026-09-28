@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Alert, App as AntApp, Button, Card, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App as AntApp, Button, Card, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { LockOutlined } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import DepthRangeInput from '../components/common/DepthRangeInput';
 import LithoColumn from '../components/common/LithoColumn';
 import EmptyPanel from '../components/common/EmptyPanel';
+import ReviewStatusTag from '../components/common/ReviewStatusTag';
 import { useHoleStore } from '../stores/holeStore';
 import { useRunStore } from '../stores/runStore';
 import { useLithoStore } from '../stores/lithoStore';
@@ -17,6 +19,8 @@ import {
   type Mineralization,
 } from '../types/litho-log';
 import { gapsWithin, validateRange } from '../utils/recovery';
+import { isHoleFrozen } from '../utils/review';
+import dayjs from 'dayjs';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -62,6 +66,7 @@ export default function LithoEditor() {
   );
   const holeRuns = useMemo(() => runs.filter((run) => run.holeId === activeHoleId), [runs, activeHoleId]);
   const activeHole = holes.find((h) => h.id === activeHoleId);
+  const frozen = isHoleFrozen(activeHole);
 
   const liveFrom = range.from;
   const liveTo = range.to;
@@ -80,6 +85,10 @@ export default function LithoEditor() {
   }, [holeLogs, activeHole]);
 
   const openCreate = () => {
+    if (frozen) {
+      message.warning('该钻孔已送审冻结，岩性记录不可新增，请先由复核人退回');
+      return;
+    }
     setEditing(null);
     setConflictIds([]);
     form.resetFields();
@@ -101,6 +110,10 @@ export default function LithoEditor() {
   };
 
   const openEdit = (record: LithoLog) => {
+    if (frozen) {
+      message.warning('该钻孔已送审冻结，岩性记录不可编辑，请先由复核人退回');
+      return;
+    }
     setEditing(record);
     setConflictIds([]);
     setRange({ from: record.fromDepth, to: record.toDepth });
@@ -140,7 +153,13 @@ export default function LithoEditor() {
       logger: values.logger,
       remark: values.remark,
     };
-    const result = editing ? await updateLitho(editing.id, payload) : await addLitho(payload);
+    let result: { log?: LithoLog; conflicts: typeof liveConflicts };
+    try {
+      result = editing ? await updateLitho(editing.id, payload) : await addLitho(payload);
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
+    }
     if (result.conflicts.length) {
       setConflictIds(result.conflicts.map((c) => c.other.id));
       const detail = result.conflicts
@@ -173,18 +192,46 @@ export default function LithoEditor() {
       title: '操作',
       width: 140,
       fixed: 'right',
-      render: (_, record) => (
-        <Space size={2}>
-          <Button size="small" type="link" onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm title={`确认删除 ${record.fromDepth}~${record.toDepth}m 编录？`} onConfirm={() => removeLitho(record.id).then(() => message.success('已删除'))}>
-            <Button size="small" type="link" danger>
-              删除
+      render: (_, record) =>
+        frozen ? (
+          <Space size={2}>
+            <Tooltip title="资料已送审冻结，退回后可编辑">
+              <span>
+                <Button size="small" type="link" disabled icon={<LockOutlined />}>
+                  编辑
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title="资料已送审冻结，不可删除">
+              <span>
+                <Button size="small" type="link" danger disabled icon={<LockOutlined />}>
+                  删除
+                </Button>
+              </span>
+            </Tooltip>
+          </Space>
+        ) : (
+          <Space size={2}>
+            <Button size="small" type="link" onClick={() => openEdit(record)}>
+              编辑
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title={`确认删除 ${record.fromDepth}~${record.toDepth}m 编录？`}
+              onConfirm={async () => {
+                try {
+                  await removeLitho(record.id);
+                  message.success('已删除');
+                } catch (error) {
+                  message.error((error as Error).message);
+                }
+              }}
+            >
+              <Button size="small" type="link" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
     },
   ];
 
@@ -200,16 +247,38 @@ export default function LithoEditor() {
       <Space style={{ marginBottom: 12 }} wrap>
         <span style={{ color: '#6b7a86' }}>当前钻孔</span>
         <Select style={{ width: 220 }} value={activeHoleId} onChange={setCurrentHole} options={holeOptions} placeholder="选择钻孔" />
-        <Button type="primary" onClick={openCreate} disabled={!activeHoleId}>
-          新增岩性区间
-        </Button>
+        {activeHole ? <ReviewStatusTag hole={activeHole} showDetail={false} /> : null}
+        <Tooltip title={frozen ? '该钻孔已送审冻结，需复核人退回后才能新增岩性区间' : undefined}>
+          <span>
+            <Button type="primary" onClick={openCreate} disabled={!activeHoleId || frozen} icon={frozen ? <LockOutlined /> : undefined}>
+              新增岩性区间
+            </Button>
+          </span>
+        </Tooltip>
         <Tag color="blue">已编录 {holeLogs.length} 段</Tag>
         <Tag color={coverageRatio >= 80 ? 'green' : 'orange'}>设计孔深覆盖率 {coverageRatio}%</Tag>
         <Tag color="red">冲突高亮 {conflictIds.length} 段</Tag>
       </Space>
 
+      {frozen ? (
+        <Alert
+          style={{ marginBottom: 12 }}
+          type="warning"
+          showIcon
+          icon={<LockOutlined />}
+          message={`钻孔 ${activeHole?.holeNo ?? ''} 已送审，岩性编录冻结中`}
+          description={`送审人：${activeHole?.review?.submittedBy ?? '-'}（${
+            activeHole?.review?.submittedAt ? dayjs(activeHole.review.submittedAt).format('YYYY-MM-DD HH:mm') : '-'
+          }）。岩性区间不可新增、编辑、删除，柱状图与台账仅供查看。`}
+        />
+      ) : null}
+
       {holeLogs.length === 0 ? (
-        <EmptyPanel description="该孔暂无岩性编录" actionText="新增岩性区间" onAction={openCreate} />
+        <EmptyPanel
+          description={frozen ? '该钻孔已送审冻结，暂无岩性编录且不可新增' : '该孔暂无岩性编录'}
+          actionText={frozen ? undefined : '新增岩性区间'}
+          onAction={frozen ? undefined : openCreate}
+        />
       ) : (
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={16}>
@@ -240,7 +309,19 @@ export default function LithoEditor() {
         </Row>
       )}
 
-      <Modal open={open} title={editing ? `编辑岩性区间 · ${editing.fromDepth}~${editing.toDepth}m` : '新增岩性区间'} onCancel={() => setOpen(false)} onOk={submit} okText="保存" cancelText="取消" width={720}>
+      <Modal
+        open={open}
+        title={editing ? `编辑岩性区间 · ${editing.fromDepth}~${editing.toDepth}m` : '新增岩性区间'}
+        onCancel={() => setOpen(false)}
+        onOk={submit}
+        okText="保存"
+        cancelText="取消"
+        okButtonProps={{ disabled: frozen }}
+        cancelButtonProps={{ disabled: frozen }}
+        closable={!frozen}
+        maskClosable={!frozen}
+        width={720}
+      >
         <Form
           form={form}
           layout="vertical"

@@ -3,6 +3,8 @@ import { db } from '../utils/db';
 import { uid } from '../utils/id';
 import type { Alteration, LithoLog, Lithology, Mineralization, RangeConflict } from '../types/litho-log';
 import { findConflicts } from '../utils/recovery';
+import { assertHoleWritable } from '../utils/review';
+import { useHoleStore } from './holeStore';
 
 export interface LithoInput {
   holeId: string;
@@ -57,6 +59,7 @@ export const useLithoStore = create<LithoState>()((set, get) => ({
   },
 
   addLitho: async (input) => {
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === input.holeId));
     const conflicts = get().checkConflicts(input);
     if (conflicts.length) {
       return { conflicts };
@@ -83,6 +86,7 @@ export const useLithoStore = create<LithoState>()((set, get) => ({
   updateLitho: async (id, patch) => {
     const current = get().lithos.find((l) => l.id === id);
     if (!current) return { conflicts: [] };
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === (patch.holeId ?? current.holeId)));
     const merged = { ...current, ...patch };
     const conflicts = get().checkConflicts(merged, id);
     if (conflicts.length) {
@@ -95,6 +99,9 @@ export const useLithoStore = create<LithoState>()((set, get) => ({
   },
 
   removeLitho: async (id) => {
+    const current = get().lithos.find((l) => l.id === id);
+    if (!current) return;
+    assertHoleWritable(useHoleStore.getState().holes.find((h) => h.id === current.holeId));
     await db.lithos.delete(id);
     set({ lithos: get().lithos.filter((l) => l.id !== id) });
   },
